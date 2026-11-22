@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import sharp from 'sharp';
 import bcrypt from 'bcryptjs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { query } from './db.js';
 import { requireAdmin } from './middleware.js';
@@ -35,38 +35,26 @@ async function getSettings() {
 }
 
 async function uploadImage(buffer) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
-    const error = new Error('Configure SUPABASE_URL e SUPABASE_SECRET_KEY na Vercel para habilitar o envio de imagens.');
-    error.status = 503;
-    throw error;
-  }
-  const optimized = await sharp(buffer).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
-  const fileName = `${Date.now()}-${cryptoRandom()}.webp`;
-  const endpoint = `${process.env.SUPABASE_URL}/storage/v1/object/esquenta31-media/${fileName}`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      apikey: process.env.SUPABASE_SECRET_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
-      'Content-Type': 'image/webp',
-      'x-upsert': 'true'
-    },
-    body: optimized
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error('Supabase Storage upload failed:', response.status, detail);
-    throw new Error('Não foi possível enviar a imagem ao armazenamento. Confira a chave secreta do Supabase.');
-  }
-  return `${process.env.SUPABASE_URL}/storage/v1/object/public/esquenta31-media/${fileName}`;
-}
-function cryptoRandom() {
-  return randomBytes(8).toString('hex');
+  const optimized = await sharp(buffer).rotate()
+    .resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 82 }).toBuffer();
+  const id = randomUUID();
+  await query('insert into public.media_files(id, content_type, image_data) values($1,$2,$3)',
+    [id, 'image/webp', optimized]);
+  return `/api/public/images/${id}`;
 }
 
 router.get('/health', asyncRoute(async (_req, res) => {
   await query('select 1');
   res.json({ ok: true, database: 'connected' });
+}));
+router.get('/public/images/:id', asyncRoute(async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) return res.status(400).end();
+  const { rows } = await query('select content_type, image_data from public.media_files where id=$1', [req.params.id]);
+  if (!rows.length) return res.status(404).end();
+  res.set('Content-Type', rows[0].content_type);
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(rows[0].image_data);
 }));
 router.get('/auth/setup-status', asyncRoute(async (_req, res) => {
   const { rows } = await query('select count(*)::int as total from public.admins');

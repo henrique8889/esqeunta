@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/admin/setup",
+      "destination": "/admin-setup.html"
+    },
+    {
+      "source": "/admin/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/cardapio",
+      "destination": "/cardapio.html"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    }
+  ]
+}
